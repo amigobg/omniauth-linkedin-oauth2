@@ -6,32 +6,26 @@ module OmniAuth
       option :name, 'linkedin'
 
       option :client_options, {
-        :site => 'https://api.linkedin.com',
-        :authorize_url => 'https://www.linkedin.com/oauth/v2/authorization?response_type=code',
-        :token_url => 'https://www.linkedin.com/oauth/v2/accessToken'
+        site: 'https://api.linkedin.com',
+        authorize_url: 'https://www.linkedin.com/oauth/v2/authorization', # <- remove ?response_type=code
+        token_url: 'https://www.linkedin.com/oauth/v2/accessToken'
       }
 
       option :scope, 'r_liteprofile r_emailaddress'
       option :fields, ['id', 'first-name', 'last-name', 'picture-url', 'email-address']
 
-      uid do
-        raw_info['id']
-      end
+      uid { raw_info['id'] }
 
       info do
         {
-          :email => email_address,
-          :first_name => localized_field('firstName'),
-          :last_name => localized_field('lastName'),
-          :picture_url => picture_url
+          email: email_address,
+          first_name: localized_field('firstName'),
+          last_name: localized_field('lastName'),
+          picture_url: picture_url
         }
       end
 
-      extra do
-        {
-          'raw_info' => raw_info
-        }
-      end
+      extra { { 'raw_info' => raw_info } }
 
       def callback_url
         full_host + script_name + callback_path
@@ -41,32 +35,38 @@ module OmniAuth
 
       def access_token
         ::OAuth2::AccessToken.new(client, oauth2_access_token.token, {
-          :expires_in => oauth2_access_token.expires_in,
-          :expires_at => oauth2_access_token.expires_at,
-          :refresh_token => oauth2_access_token.refresh_token
+          expires_in: oauth2_access_token.expires_in,
+          expires_at: oauth2_access_token.expires_at,
+          refresh_token: oauth2_access_token.refresh_token
         })
       end
 
       def raw_info
-        @raw_info ||= access_token.get(profile_endpoint).parsed
+        @raw_info ||= access_token.get(profile_endpoint, headers: api_headers).parsed
       end
 
       private
 
+      def api_headers
+        {
+          'X-Restli-Protocol-Version' => '2.0.0',
+          'Linkedin-Version' => '202601' # YYYYMM; bump if LinkedIn sunsets it
+        }
+      end
+
       def email_address
-        if options.fields.include? 'email-address'
+        if options.fields.include?('email-address')
           fetch_email_address
           parse_email_address
         end
       end
 
       def fetch_email_address
-        @email_address_response ||= access_token.get(email_address_endpoint).parsed
+        @email_address_response ||= access_token.get(email_address_endpoint, headers: api_headers).parsed
       end
 
       def parse_email_address
         return unless email_address_available?
-
         @email_address_response['elements'].first['handle~']['emailAddress']
       end
 
@@ -88,28 +88,25 @@ module OmniAuth
 
       def fields
         options.fields.each.with_object([]) do |field, result|
-          result << fields_mapping[field] if fields_mapping.has_key? field
+          result << fields_mapping[field] if fields_mapping.key?(field)
         end
       end
 
-      def localized_field field_name
-        return unless localized_field_available? field_name
-
+      def localized_field(field_name)
+        return unless localized_field_available?(field_name)
         raw_info[field_name]['localized'][field_locale(field_name)]
       end
 
-      def field_locale field_name
-        "#{ raw_info[field_name]['preferredLocale']['language'] }_" \
-          "#{ raw_info[field_name]['preferredLocale']['country'] }"
+      def field_locale(field_name)
+        "#{raw_info[field_name]['preferredLocale']['language']}_#{raw_info[field_name]['preferredLocale']['country']}"
       end
 
-      def localized_field_available? field_name
+      def localized_field_available?(field_name)
         raw_info[field_name] && raw_info[field_name]['localized']
       end
 
       def picture_url
         return unless picture_available?
-
         picture_references.last['identifiers'].first['identifier']
       end
 
@@ -128,7 +125,7 @@ module OmniAuth
       end
 
       def profile_endpoint
-        "/v2/me?projection=(#{ fields.join(',') })"
+        "/v2/me?projection=(#{fields.join(',')})"
       end
     end
   end
